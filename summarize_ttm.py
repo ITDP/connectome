@@ -17,6 +17,7 @@ def load_wide_ttm(directory, mode):
     wide_ttm.columns = pd.to_numeric(wide_ttm.columns)
     return wide_ttm
 
+#TODO: consider replacing with a logsum model for mode choice?
 def get_mode_abilities(from_point):
     from_pop = from_point[1]['POP10']
     mode_abilities = []

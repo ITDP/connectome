@@ -1,3 +1,18 @@
+#files for access tool:
+sc*/
+prep*/
+pop_points.csv
+*.geojson
+*.osm.pbf
+*.osm
+network.dat
+*.mapdb*
+
+
+
+
+#general Python files:
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
