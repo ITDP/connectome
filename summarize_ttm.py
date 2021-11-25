@@ -6,7 +6,22 @@ import numpy as np
 from tqdm import tqdm
 import os
 
-scenarios = ['sc_existing_conditions','sc_new_bridge']
+# SETTINGS
+
+#existing conditions or reference scenario should be first
+scenarios = ['sc_pvd_existing_conditions','sc_pvd_new_bridge']
+
+# see http://www1.coe.neu.edu/~pfurth/Other%20papers/Dill%202013%204%20types%20of%20cyclists%20TRR.pdf
+# this could be replaced by something more nuanced in the prep_pop_points.py script
+cyclist_distribution = [
+    (0.04, ['bike_lts4']),
+    (0.09, ['bike_lts2']),
+    (0.56, ['bike_lts1']),
+    (0.31, []),
+]
+assert sum([category[0] for category in cyclist_distribution]) == 1
+
+#END SETTINGS
 
 #these function definitions shouldn't change between experiment runs,
 #or even between cities
@@ -29,8 +44,10 @@ def get_mode_abilities(from_point):
     #??how??
     people_with_cars = (from_pop * pop_points.loc[from_point[0], 'pct_twopluscars']) + (0.75 * from_pop * pop_points.loc[from_point[0], 'pct_onecar'])
     people_without_cars = (from_pop * pop_points.loc[from_point[0], 'pct_carfree']) + (0.25 * from_pop * pop_points.loc[from_point[0], 'pct_onecar'])
-    mode_abilities.append([people_with_cars, 'car','walk','transit'])
-    mode_abilities.append([people_without_cars, 'walk','transit'])
+    for cyclist_category in cyclist_distribution:
+        mode_abilities.append([people_with_cars * cyclist_category[0], *['car','walk','transit']+cyclist_category[1]])
+    for cyclist_category in cyclist_distribution:
+        mode_abilities.append([people_without_cars * cyclist_category[0], *['walk','transit']+cyclist_category[1]])
     return mode_abilities
 
 #TODO: replace with a better gravity function after literature review
@@ -63,13 +80,6 @@ def sum_scenario_value(pop_points, scenario_ttms):
                         if np.isnan(mode_times[mode]):
                             mode_times[mode] = 1000000000
                         
-                    #total hack for now! Some points in providence has population but not car data.
-                    #this should go into prep_pop
-                    if np.isnan(pop_points.loc[from_point[0], 'pct_twopluscars']):
-                        pop_points.loc[from_point[0], 'pct_twopluscars'] = .9
-                        pop_points.loc[from_point[0], 'pct_onecar'] = .05
-                        pop_points.loc[from_point[0], 'pct_carfree'] = .05
-                    
                     mode_abilities = get_mode_abilities(from_point)
                     
                     for ability_category in mode_abilities:
@@ -79,8 +89,8 @@ def sum_scenario_value(pop_points, scenario_ttms):
                         out_df.loc[from_point[0],f'val_from_{mode_choice}'] += cxn_val
                         additional_value += cxn_val
                         
-                    out_df.loc[from_point[0],f'value_from_all'] = additional_value 
-                    out_df.loc[from_point[0],f'value_per_person'] = additional_value / from_pop
+                    out_df.loc[from_point[0],'value_from_all'] = additional_value 
+                    out_df.loc[from_point[0],'value_per_person'] = additional_value / from_pop
                     for mode in modes:
                         out_df.loc[from_point[0],f'prop_from_{mode}'] = out_df.loc[from_point[0],f'val_from_{mode}'] / additional_value 
                     
@@ -91,14 +101,6 @@ def sum_scenario_value(pop_points, scenario_ttms):
     return total_value, out_df
 
 
-# for now, assume no change in pop distribution between scenarios
-#TODO: fix this -- population distribution should be an attribute of a scenario
-print('loading pop data')
-pop_points = pd.read_csv('pop_points.csv')
-pop_points.index = pop_points.id.astype(int)
-pop_points.index.rename('id_number',inplace=True)
-
-grid_pop = gpd.read_file('grid_pop.geojson')
 
 #load specific inputs for all scenarios
 scenario_ttms = {}
@@ -107,8 +109,13 @@ out = {}
 
 for scenario in scenarios:
     print(f'loading data for {scenario}')
+    pop_points = pd.read_csv(f'{scenario}/pop_points.csv')
+    pop_points.index = pop_points.id.astype(int)
+    pop_points.index.rename('id_number',inplace=True)
+
+    grid_pop = gpd.read_file(f'{scenario}/grid_pop.geojson')
     scenario_ttms[scenario] = {}
-    for mode in ['car','walk','transit']:
+    for mode in ['car','walk','transit','bike_lts4','bike_lts2','bike_lts1']:
         mode_wide = load_wide_ttm(scenario, mode)
         scenario_ttms[scenario][mode] = mode_wide
     print(f'calculating value for for {scenario}')
@@ -118,9 +125,9 @@ for scenario in scenarios:
     out_gdfs[scenario] = scenario_gdf
     if not scenario == 'sc_existing_conditions':
         for from_idx in scenario_gdf.index:
-            val_change = scenario_gdf.loc[from_idx, 'value_from_all'] - out_gdfs['sc_existing_conditions'].loc[from_idx, 'value_from_all'] 
+            val_change = scenario_gdf.loc[from_idx, 'value_from_all'] - out_gdfs[scenarios[0]].loc[from_idx, 'value_from_all'] 
             scenario_gdf.loc[from_idx, 'value_change'] = val_change
-            scenario_gdf.loc[from_idx, 'rel_value_change'] = val_change /  out_gdfs['sc_existing_conditions'].loc[from_idx, 'value_from_all'] 
+            scenario_gdf.loc[from_idx, 'rel_value_change'] = val_change /  out_gdfs[scenarios[0]].loc[from_idx, 'value_from_all'] 
     scenario_gdf.to_file(f'{scenario}_grid.geojson', driver='GeoJSON')
 print(out)
 

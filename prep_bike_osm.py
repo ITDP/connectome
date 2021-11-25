@@ -2,6 +2,13 @@
 #specifically, add LTS values based on bike lanes
 
 import osmium
+import os
+
+file_list = [
+    #('sc_pvd_existing_conditions/providence.osm.pbf','sc_pvd_existing_conditions/providence_bikelts.osm.pbf'),
+    ('sc_pvd_new_bridge/pvd_newbridge.pbf','sc_pvd_new_bridge/pvd_newbridge_bikelts.osm.pbf'),
+    ]
+
 
 class SimplestLTSAdder(osmium.SimpleHandler):
 	def __init__(self, writer, all_4):
@@ -79,8 +86,9 @@ def add_lts_tags(osm_filename, out_filename, all_4=False):
 	writer = osmium.SimpleWriter(out_filename)
 	ltsadder = SimplestLTSAdder(writer, all_4)
 	ltsadder.apply_file(osm_filename)
-	print('added lts=1 to', ltsadder.n_modified_ways)
+	print('added lts=1 or =2 to', ltsadder.n_modified_ways)
     
-    
-add_lts_tags('unformatted_data/salvador_city.pbf','salvador_area_LTS.pbf')
-ghsl_to_points('unformatted_data/salvador_pop_dens.tif', 'salvador_area_pop_points.csv')
+for in_out_pair in file_list:
+    infile, outfile = in_out_pair
+    add_lts_tags(infile,outfile)
+    os.rename(infile, infile+'.backup')
