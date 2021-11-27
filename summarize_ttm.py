@@ -9,7 +9,7 @@ import os
 # SETTINGS
 
 #existing conditions or reference scenario should be first
-scenarios = ['sc_pvd_existing_conditions','sc_pvd_new_bridge']
+scenarios = ['sc_pvd_existing_conditions','sc_pvd_bikeaxes', 'sc_pvd_notransit']
 
 # see http://www1.coe.neu.edu/~pfurth/Other%20papers/Dill%202013%204%20types%20of%20cyclists%20TRR.pdf
 # this could be replaced by something more nuanced in the prep_pop_points.py script
@@ -52,8 +52,6 @@ def get_mode_abilities(from_point):
 
 #TODO: replace with a better gravity function after literature review
 def value_of_cxn(from_pop, to_pop, traveltime_min):
-    if traveltime_min == 0: #TODO: come up with a size-dependent way of handling this
-        return 0
     return (from_pop*to_pop)/((traveltime_min/30)**2)
 
 def sum_scenario_value(pop_points, scenario_ttms):
@@ -62,21 +60,22 @@ def sum_scenario_value(pop_points, scenario_ttms):
     total_value = 0
     for from_point in tqdm(pop_points.iterrows(), total=len(pop_points)):
         from_pop = from_point[1]['POP10']
-        additional_value = 0
         for mode in modes:
             out_df.loc[from_point[0],f'val_from_{mode}'] = 0
         if from_pop > 0:
+            value_of_from = 0
             for to_point in pop_points.iterrows():
                 to_pop = to_point[1]['POP10']
-                if to_pop > 0:
+                if to_pop > 0 and not (from_point[0] == to_point[0]):
                     mode_times = {}
                     for mode in modes:
-                        try:
-                            mode_times[mode] = scenario_ttms[mode].loc[from_point[0], to_point[0]]
-                            if mode == 'car' and mode_times['car'] != 0:
-                                mode_times[mode] += 1 #ASSUMPTION: +1 for parking
-                        except KeyError:
-                            mode_times[mode] = 1000000000
+                        mode_times[mode] = scenario_ttms[mode].loc[from_point[0], to_point[0]]
+                        if mode_times[mode] == 0:
+                            mode_times[mode] += 1
+                        if mode == 'car':
+                            mode_times[mode] += 1 #ASSUMPTION: +1 for parking
+                        if mode == 'transit':
+                            mode_times[mode] += 1 #ASSUMPTION: +1 for waiting
                         if np.isnan(mode_times[mode]):
                             mode_times[mode] = 1000000000
                         
@@ -87,16 +86,18 @@ def sum_scenario_value(pop_points, scenario_ttms):
                         time = mode_times[mode_choice]
                         cxn_val = value_of_cxn(ability_category[0],to_pop,time)
                         out_df.loc[from_point[0],f'val_from_{mode_choice}'] += cxn_val
-                        additional_value += cxn_val
-                        
-                    out_df.loc[from_point[0],'value_from_all'] = additional_value 
-                    out_df.loc[from_point[0],'value_per_person'] = additional_value / from_pop
-                    for mode in modes:
-                        out_df.loc[from_point[0],f'prop_from_{mode}'] = out_df.loc[from_point[0],f'val_from_{mode}'] / additional_value 
-                    
-                    if np.isnan(additional_value):
+                        value_of_from += cxn_val
+                    if np.inf == value_of_from:
                         import pdb; pdb.set_trace()
-                    total_value += additional_value
+                        
+            out_df.loc[from_point[0],'value_from_all'] = value_of_from 
+            out_df.loc[from_point[0],'value_per_person'] = value_of_from / from_pop
+            for mode in modes:
+                out_df.loc[from_point[0],f'prop_from_{mode}'] = out_df.loc[from_point[0],f'val_from_{mode}'] / value_of_from 
+            
+            if np.isnan(value_of_from):
+                import pdb; pdb.set_trace()
+            total_value += value_of_from
                     
     return total_value, out_df
 
@@ -122,14 +123,24 @@ for scenario in scenarios:
     total_val, out_df = sum_scenario_value(pop_points, scenario_ttms[scenario])
     out[scenario] = total_val
     scenario_gdf = grid_pop.merge(out_df, how='left', on='id')
-    out_gdfs[scenario] = scenario_gdf
-    if not scenario == 'sc_existing_conditions':
+    if not scenario == scenarios[0]:
         for from_idx in scenario_gdf.index:
             val_change = scenario_gdf.loc[from_idx, 'value_from_all'] - out_gdfs[scenarios[0]].loc[from_idx, 'value_from_all'] 
             scenario_gdf.loc[from_idx, 'value_change'] = val_change
             scenario_gdf.loc[from_idx, 'rel_value_change'] = val_change /  out_gdfs[scenarios[0]].loc[from_idx, 'value_from_all'] 
     scenario_gdf.to_file(f'{scenario}_grid.geojson', driver='GeoJSON')
+    out_gdfs[scenario] = scenario_gdf
 print(out)
 
 
+def compare_points(out_gdfs, rowid):
+    comparison = pd.DataFrame()
+    for scenario in out_gdfs.keys():
+        comparison[scenario] = out_gdfs[scenario].loc[rowid]
+    return comparison
 
+def check_car(pop_points, scenario_ttms):
+    for from_id in pop_points.index:
+        for to_id in pop_points.index:
+            if scenario_ttms['sc_pvd_notransit']['transit'].loc[from_id, to_id] < (scenario_ttms['sc_pvd_existing_conditions']['transit'].loc[from_id, to_id]-1):
+                print(from_id, to_id)
