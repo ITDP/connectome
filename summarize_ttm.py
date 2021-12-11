@@ -11,6 +11,11 @@ import os
 #existing conditions or reference scenario should be first
 scenarios = ['sc_pvd_existing_conditions','sc_pvd_bikeaxes', 'sc_pvd_notransit']
 
+#for the modes in this list, 
+#override the scenario-specific TTMs with the TTMs from the first scenario
+#in the above list (understood as BAU / existing conditions)
+keep_ec_ttms = ['car']
+
 # see http://www1.coe.neu.edu/~pfurth/Other%20papers/Dill%202013%204%20types%20of%20cyclists%20TRR.pdf
 # this could be replaced by something more nuanced in the prep_pop_points.py script
 cyclist_distribution = [
@@ -23,8 +28,6 @@ assert sum([category[0] for category in cyclist_distribution]) == 1
 
 #END SETTINGS
 
-#these function definitions shouldn't change between experiment runs,
-#or even between cities
 
 def load_wide_ttm(directory, mode):
     wide_ttm = pd.read_csv(f'{directory}/travel_times/{mode}_wide.csv', index_col='fromId')
@@ -40,8 +43,10 @@ def get_mode_abilities(from_point):
     #The first element of each list is the number of people in that category,
     #the remaining elements are the modes they can use. 
     #at some point this will have to be refined to deal with incomes that impact variable cost impedance
-    #the idea is that everyone in each category will pick the same mode, for the same reasons
+    #the idea is that everyone in each category will pick the same mode for a given O-D,
+    #for the same reasons
     #??how??
+    #also, how to make into a dataframe?
     people_with_cars = (from_pop * pop_points.loc[from_point[0], 'pct_twopluscars']) + (0.75 * from_pop * pop_points.loc[from_point[0], 'pct_onecar'])
     people_without_cars = (from_pop * pop_points.loc[from_point[0], 'pct_carfree']) + (0.25 * from_pop * pop_points.loc[from_point[0], 'pct_onecar'])
     for cyclist_category in cyclist_distribution:
@@ -54,7 +59,7 @@ def get_mode_abilities(from_point):
 def value_of_cxn(from_pop, to_pop, traveltime_min):
     return (from_pop*to_pop)/((traveltime_min/30)**2)
 
-def sum_scenario_value(pop_points, scenario_ttms):
+def sum_scenario_value(pop_points, scenario_ttms, ec_modes = [], ec_ttms = None):
     modes = scenario_ttms.keys()
     out_df = pop_points.copy()
     total_value = 0
@@ -69,7 +74,10 @@ def sum_scenario_value(pop_points, scenario_ttms):
                 if to_pop > 0 and not (from_point[0] == to_point[0]):
                     mode_times = {}
                     for mode in modes:
-                        mode_times[mode] = scenario_ttms[mode].loc[from_point[0], to_point[0]]
+                        if mode in ec_modes:
+                            mode_times[mode] = ec_ttms[mode].loc[from_point[0], to_point[0]]
+                        else:
+                            mode_times[mode] = scenario_ttms[mode].loc[from_point[0], to_point[0]]
                         if mode_times[mode] == 0:
                             mode_times[mode] += 1
                         if mode == 'car':
@@ -90,11 +98,11 @@ def sum_scenario_value(pop_points, scenario_ttms):
                     if np.inf == value_of_from:
                         import pdb; pdb.set_trace()
                         
-            out_df.loc[from_point[0],'value_from_all'] = value_of_from 
-            out_df.loc[from_point[0],'value_per_person'] = value_of_from / from_pop
-            for mode in modes:
-                out_df.loc[from_point[0],f'prop_from_{mode}'] = out_df.loc[from_point[0],f'val_from_{mode}'] / value_of_from 
-            
+            out_df.loc[from_point[0],'value_from_all'] = int(value_of_from)
+            out_df.loc[from_point[0],'value_per_person'] = int(value_of_from / from_pop)
+            out_df.loc[from_point[0],'val_from_allbike'] = sum([out_df.loc[from_point[0],f'val_from_bike_lts{n}'] for n in [1,2,4]])
+            for mode in list(modes) + ['allbike']:
+                out_df.loc[from_point[0],f'prop_from_{mode}'] = out_df.loc[from_point[0],f'val_from_{mode}'] / value_of_from
             if np.isnan(value_of_from):
                 import pdb; pdb.set_trace()
             total_value += value_of_from
@@ -120,9 +128,20 @@ for scenario in scenarios:
         mode_wide = load_wide_ttm(scenario, mode)
         scenario_ttms[scenario][mode] = mode_wide
     print(f'calculating value for for {scenario}')
-    total_val, out_df = sum_scenario_value(pop_points, scenario_ttms[scenario])
+    if scenario == scenarios[0]:
+        #is existing conditions / BAU
+        total_val, out_df = sum_scenario_value(pop_points, scenario_ttms[scenario])
+    else: 
+        total_val, out_df = sum_scenario_value(pop_points, 
+                                               scenario_ttms[scenario],
+                                               keep_ec_ttms,
+                                               scenario_ttms[scenarios[0]])
+        
     out[scenario] = total_val
     scenario_gdf = grid_pop.merge(out_df, how='left', on='id')
+    for col in scenario_gdf.columns:
+        if col[-2:] == '_y':
+            scenario_gdf.drop(col, axis=1, inplace=True)
     if not scenario == scenarios[0]:
         for from_idx in scenario_gdf.index:
             val_change = scenario_gdf.loc[from_idx, 'value_from_all'] - out_gdfs[scenarios[0]].loc[from_idx, 'value_from_all'] 
@@ -132,15 +151,22 @@ for scenario in scenarios:
     out_gdfs[scenario] = scenario_gdf
 print(out)
 
+def summarize_scenarios(out_gdfs):
+    pass
 
 def compare_points(out_gdfs, rowid):
     comparison = pd.DataFrame()
     for scenario in out_gdfs.keys():
-        comparison[scenario] = out_gdfs[scenario].loc[rowid]
+        comparison[scenario] = out_gdfs[scenario].loc[rowid].drop('geometry')
     return comparison
 
-def check_car(pop_points, scenario_ttms):
+def check_val_diffs(pop_points, scenario_ttms, scenario1, scenario2, mode):
+    out=pd.DataFrame(columns = ["origin","destination",scenario1, scenario2])
     for from_id in pop_points.index:
         for to_id in pop_points.index:
-            if scenario_ttms['sc_pvd_notransit']['transit'].loc[from_id, to_id] < (scenario_ttms['sc_pvd_existing_conditions']['transit'].loc[from_id, to_id]-1):
-                print(from_id, to_id)
+            val1 = scenario_ttms[scenario1][mode].loc[from_id, to_id]
+            val2 = scenario_ttms[scenario2][mode].loc[from_id, to_id]
+            if val1 != val2:
+                if val1 > 1:
+                    out.loc[len(out.index)] = [from_id, to_id, val1, val2]
+    return out
