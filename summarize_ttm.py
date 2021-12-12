@@ -55,9 +55,13 @@ def get_mode_abilities(from_point):
         mode_abilities.append([people_without_cars * cyclist_category[0], *['walk','transit']+cyclist_category[1]])
     return mode_abilities
 
-#TODO: replace with a better gravity function after literature review
-def value_of_cxn(from_pop, to_pop, traveltime_min):
-    return (from_pop*to_pop)/((traveltime_min/30)**2)
+
+def value_of_cxn(from_pop, to_pop, t_min):
+    #see SSTI's Measuring Accessibility, appendix (p.68)
+    #rough average of work and non-work
+    baseval = from_pop * to_pop
+    return baseval * 1.14 * np.e ** (-0.05 * t_min)
+    #return (from_pop*to_pop)/((traveltime_min/30)**2)
 
 def sum_scenario_value(pop_points, scenario_ttms, ec_modes = [], ec_ttms = None):
     modes = scenario_ttms.keys()
