@@ -4,12 +4,6 @@
 import osmium
 import os
 
-file_list = [
-    #('sc_pvd_existing_conditions/providence.osm.pbf','sc_pvd_existing_conditions/providence_bikelts.osm.pbf'),
-    ('sc_pvd_new_bridge/pvd_newbridge.pbf','sc_pvd_new_bridge/pvd_newbridge_bikelts.osm.pbf'),
-    ]
-
-
 class SimplestLTSAdder(osmium.SimpleHandler):
 	def __init__(self, writer, all_4):
 		osmium.SimpleHandler.__init__(self)
@@ -88,7 +82,9 @@ def add_lts_tags(osm_filename, out_filename, all_4=False):
 	ltsadder.apply_file(osm_filename)
 	print('added lts=1 or =2 to', ltsadder.n_modified_ways)
     
-for in_out_pair in file_list:
-    infile, outfile = in_out_pair
-    add_lts_tags(infile,outfile)
-    os.rename(infile, infile+'.backup')
+for scenario in os.listdir('scenarios/'):
+    for filename in os.listdir(f'scenarios/{scenario}'):
+        if filename[-4:] == '.pbf':
+            full_filename = f'scenarios/{scenario}/{filename}'
+            os.copy(full_filename, full_filename+'.backup')
+            add_lts_tags(full_filename,full_filename)

@@ -17,7 +17,7 @@ block_groups_gdf_crs = gpd.read_file('prep_pop/RI_block_groups.zip').to_crs(city
 veh_avail = pd.read_csv('prep_pop/B25044.csv', index_col=0).iloc[1:,]
 
 bounds_gdf_latlon = gpd.GeoDataFrame(geometry = [
-    shapely.geometry.box(-71.550522,41.677528,-71.348991,41.891799)],
+    shapely.geometry.box(-71.471901,41.764142,-71.347961,41.888733)],
     crs = 4326)
 bounds_gdf_crs = bounds_gdf_latlon.to_crs(city_crs)
 

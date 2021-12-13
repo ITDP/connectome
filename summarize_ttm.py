@@ -5,16 +5,16 @@ import geopandas as gpd
 import numpy as np
 from tqdm import tqdm
 import os
+import glob
 
 # SETTINGS
 
 #existing conditions or reference scenario should be first
-scenarios = ['sc_pvd_existing_conditions','sc_pvd_bikeaxes', 'sc_pvd_notransit']
 
 #for the modes in this list, 
 #override the scenario-specific TTMs with the TTMs from the first scenario
 #in the above list (understood as BAU / existing conditions)
-keep_ec_ttms = ['car']
+keep_ec_ttms = []
 
 # see http://www1.coe.neu.edu/~pfurth/Other%20papers/Dill%202013%204%20types%20of%20cyclists%20TRR.pdf
 # this could be replaced by something more nuanced in the prep_pop_points.py script
@@ -28,9 +28,37 @@ assert sum([category[0] for category in cyclist_distribution]) == 1
 
 #END SETTINGS
 
+def clean_scenarios():
+    for scenario in os.listdir('scenarios/'):
+        sc_dir = 'scenarios/'+scenario+'/'
+        try:
+            os.remove(sc_dir+'network.dat')
+        except:
+            pass
+        
+        filelist = glob.glob(sc_dir+'*.mapdb')
+        for filepath in filelist:
+            try:
+                os.remove(filepath)
+            except:
+                pass
+        
+        filelist = glob.glob(sc_dir+'*.mapdb.p')
+        for filepath in filelist:
+            try:
+                os.remove(filepath)
+            except:
+                pass
+            
+        filelist = glob.glob(sc_dir+'travel_times/*')
+        for filepath in filelist:
+            try:
+                os.remove(filepath)
+            except:
+                pass
 
 def load_wide_ttm(directory, mode):
-    wide_ttm = pd.read_csv(f'{directory}/travel_times/{mode}_wide.csv', index_col='fromId')
+    wide_ttm = pd.read_csv(f'scenarios/{directory}/travel_times/{mode}_wide.csv', index_col='fromId')
     del wide_ttm["Unnamed: 0"]
     wide_ttm.columns = pd.to_numeric(wide_ttm.columns)
     return wide_ttm
@@ -120,13 +148,19 @@ scenario_ttms = {}
 out_gdfs = {}
 out = {}
 
+
+scenarios = os.listdir('scenarios/')
+if 'existing_conditions' in scenarios:
+    scenarios.remove('existing_conditions')
+    scenarios.insert(0, 'existing_conditions')
+
 for scenario in scenarios:
     print(f'loading data for {scenario}')
-    pop_points = pd.read_csv(f'{scenario}/pop_points.csv')
+    pop_points = pd.read_csv(f'scenarios/{scenario}/pop_points.csv')
     pop_points.index = pop_points.id.astype(int)
     pop_points.index.rename('id_number',inplace=True)
 
-    grid_pop = gpd.read_file(f'{scenario}/grid_pop.geojson')
+    grid_pop = gpd.read_file(f'scenarios/{scenario}/grid_pop.geojson')
     scenario_ttms[scenario] = {}
     for mode in ['car','walk','transit','bike_lts4','bike_lts2','bike_lts1']:
         mode_wide = load_wide_ttm(scenario, mode)
@@ -151,7 +185,7 @@ for scenario in scenarios:
             val_change = scenario_gdf.loc[from_idx, 'value_from_all'] - out_gdfs[scenarios[0]].loc[from_idx, 'value_from_all'] 
             scenario_gdf.loc[from_idx, 'value_change'] = val_change
             scenario_gdf.loc[from_idx, 'rel_value_change'] = val_change /  out_gdfs[scenarios[0]].loc[from_idx, 'value_from_all'] 
-    scenario_gdf.to_file(f'{scenario}_grid.geojson', driver='GeoJSON')
+    scenario_gdf.to_file(f'results/{scenario}_grid.geojson', driver='GeoJSON')
     out_gdfs[scenario] = scenario_gdf
 print(out)
 
