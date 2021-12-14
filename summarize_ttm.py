@@ -11,10 +11,13 @@ import glob
 
 #existing conditions or reference scenario should be first
 
-#for the modes in this list, 
-#override the scenario-specific TTMs with the TTMs from the first scenario
-#in the above list (understood as BAU / existing conditions)
-keep_ec_ttms = []
+#for the scenarios and modes in this dictionary, 
+#override the scenario-specific TTMs with the TTMs from the existing conditions scenario
+keep_ec_ttms = {
+    'notransit':'car',
+    'bikehope':'car',
+    'bikenetwork':'car',}
+
 
 # see http://www1.coe.neu.edu/~pfurth/Other%20papers/Dill%202013%204%20types%20of%20cyclists%20TRR.pdf
 # this could be replaced by something more nuanced in the prep_pop_points.py script
@@ -141,7 +144,42 @@ def sum_scenario_value(pop_points, scenario_ttms, ec_modes = [], ec_ttms = None)
                     
     return total_value, out_df
 
+def compare_points(out_gdfs, rowid):
+    comparison = pd.DataFrame()
+    for scenario in out_gdfs.keys():
+        comparison[scenario] = out_gdfs[scenario].loc[rowid].drop('geometry')
+    return comparison
 
+def check_val_diffs(pop_points, scenario_ttms, scenario1, scenario2, mode):
+    out=pd.DataFrame(columns = ["origin","destination",scenario1, scenario2])
+    for from_id in pop_points.index:
+        for to_id in pop_points.index:
+            val1 = scenario_ttms[scenario1][mode].loc[from_id, to_id]
+            val2 = scenario_ttms[scenario2][mode].loc[from_id, to_id]
+            if val1 != val2:
+                if val1 > 1:
+                    out.loc[len(out.index)] = [from_id, to_id, val1, val2]
+    return out
+
+def summarize_output(out_gdfs):
+    summary = pd.DataFrame(index=out_gdfs.keys())
+    for scenario in summary.index:
+        gdf = out_gdfs[scenario]
+        total_val = gdf['value_from_all'].sum()
+        summary.loc[scenario, 'total_val'] = total_val
+        val_per_cap = round(total_val / gdf['POP10_x'].sum())
+        summary.loc[scenario, 'val_per_cap'] = val_per_cap
+        for mode in ['walk','car','transit','allbike','bike_lts1','bike_lts2','bike_lts4']:
+            prop_from_mode = round(gdf[f'val_from_{mode}'].sum() / total_val, 6)*100
+            summary.loc[scenario, f'perc_from_{mode}'] = prop_from_mode
+        if 'existing_conditions' in summary.index:
+            perc_change = 100 * round(total_val / summary.loc['existing_conditions', 'total_val'],6)
+            summary.loc[scenario, 'perc_change'] = perc_change
+            perc_change_percap = 100 * round(val_per_cap / summary.loc['existing_conditions', 'val_per_cap'],6)
+            summary.loc[scenario, 'perc_change_per_cap'] = perc_change_percap
+            
+    return summary
+    
 
 #load specific inputs for all scenarios
 scenario_ttms = {}
@@ -170,9 +208,13 @@ for scenario in scenarios:
         #is existing conditions / BAU
         total_val, out_df = sum_scenario_value(pop_points, scenario_ttms[scenario])
     else: 
+        if scenario in keep_ec_ttms.keys():
+            ec_ttms = keep_ec_ttms[scenario]
+        else:
+            ec_ttms = []
         total_val, out_df = sum_scenario_value(pop_points, 
                                                scenario_ttms[scenario],
-                                               keep_ec_ttms,
+                                               ec_ttms,
                                                scenario_ttms[scenarios[0]])
         
     out[scenario] = total_val
@@ -188,23 +230,3 @@ for scenario in scenarios:
     scenario_gdf.to_file(f'results/{scenario}_grid.geojson', driver='GeoJSON')
     out_gdfs[scenario] = scenario_gdf
 print(out)
-
-def summarize_scenarios(out_gdfs):
-    pass
-
-def compare_points(out_gdfs, rowid):
-    comparison = pd.DataFrame()
-    for scenario in out_gdfs.keys():
-        comparison[scenario] = out_gdfs[scenario].loc[rowid].drop('geometry')
-    return comparison
-
-def check_val_diffs(pop_points, scenario_ttms, scenario1, scenario2, mode):
-    out=pd.DataFrame(columns = ["origin","destination",scenario1, scenario2])
-    for from_id in pop_points.index:
-        for to_id in pop_points.index:
-            val1 = scenario_ttms[scenario1][mode].loc[from_id, to_id]
-            val2 = scenario_ttms[scenario2][mode].loc[from_id, to_id]
-            if val1 != val2:
-                if val1 > 1:
-                    out.loc[len(out.index)] = [from_id, to_id, val1, val2]
-    return out

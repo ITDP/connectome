@@ -3,6 +3,7 @@
 
 import osmium
 import os
+import shutil
 
 class SimplestLTSAdder(osmium.SimpleHandler):
 	def __init__(self, writer, all_4):
@@ -86,5 +87,8 @@ for scenario in os.listdir('scenarios/'):
     for filename in os.listdir(f'scenarios/{scenario}'):
         if filename[-4:] == '.pbf':
             full_filename = f'scenarios/{scenario}/{filename}'
-            os.copy(full_filename, full_filename+'.backup')
-            add_lts_tags(full_filename,full_filename)
+            temp_filename =  f'scenarios/{scenario}/OLD{filename}'
+            shutil.copy(full_filename, full_filename+'.backup')
+            os.rename(full_filename, temp_filename)
+            add_lts_tags(temp_filename,full_filename)
+            os.remove(temp_filename)
