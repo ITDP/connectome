@@ -14,9 +14,8 @@ import glob
 #for the scenarios and modes in this dictionary, 
 #override the scenario-specific TTMs with the TTMs from the existing conditions scenario
 keep_ec_ttms = {
-    'notransit':'car',
-    'bikehope':'car',
-    'bikenetwork':'car',}
+    'new_highways':'transit',
+    'secondary_cycleways':'transit',}
 
 
 # see http://www1.coe.neu.edu/~pfurth/Other%20papers/Dill%202013%204%20types%20of%20cyclists%20TRR.pdf
@@ -159,6 +158,7 @@ def check_val_diffs(pop_points, scenario_ttms, scenario1, scenario2, mode):
             if val1 != val2:
                 if val1 > 1:
                     out.loc[len(out.index)] = [from_id, to_id, val1, val2]
+    out['difference'] = out[scenario2] - out[scenario1]
     return out
 
 def summarize_output(out_gdfs):
@@ -229,4 +229,5 @@ for scenario in scenarios:
             scenario_gdf.loc[from_idx, 'rel_value_change'] = val_change /  out_gdfs[scenarios[0]].loc[from_idx, 'value_from_all'] 
     scenario_gdf.to_file(f'results/{scenario}_grid.geojson', driver='GeoJSON')
     out_gdfs[scenario] = scenario_gdf
+summarize_output(out_gdfs).to_csv('results/summary.csv')
 print(out)
