@@ -1,4 +1,6 @@
 import geopandas as gpd
+# required for MAUP: https://github.com/geopandas/geopandas/issues/2199
+gpd.options.use_pygeos = False
 import pandas as pd
 import numpy as np
 import shapely
@@ -10,14 +12,16 @@ import os
 
 #INTRO - need to edit values here for new city deployment
 
-city_crs = 32130 
+data_source = "census" #"census" or "ghsl"
 
-blocks_gdf_crs = gpd.read_file('prep_pop/RI_blocks.zip').to_crs(city_crs)
-block_groups_gdf_crs = gpd.read_file('prep_pop/RI_block_groups.zip').to_crs(city_crs)
-veh_avail = pd.read_csv('prep_pop/B25044.csv', index_col=0).iloc[1:,]
+city_crs = 32712
+
+blocks_gdf_crs = gpd.read_file('prep_pop/tabblock2010_04_pophu.zip').to_crs(city_crs)
+block_groups_gdf_crs = gpd.read_file('prep_pop/tl_2019_04_bg.zip').to_crs(city_crs)
+veh_avail = pd.read_csv('prep_pop/B25044.csv').iloc[1:,]
 
 bounds_gdf_latlon = gpd.GeoDataFrame(geometry = [
-    shapely.geometry.box(-71.471901,41.764142,-71.347961,41.888733)],
+    shapely.geometry.box(-111.124649,32.059300,-110.690002,32.366043)],
     crs = 4326)
 bounds_gdf_crs = bounds_gdf_latlon.to_crs(city_crs)
 
@@ -110,7 +114,7 @@ block_groups_gdf_crs = gpd.clip(block_groups_gdf_crs, bounds_gdf_crs)
 #assign veh_avail and block_groups the same index
 block_groups_gdf_crs.index = block_groups_gdf_crs.GEOID
 newidx = []
-for bgidx in veh_avail.index:
+for bgidx in veh_avail.GEO_ID:
     newidx.append(bgidx[9:])
 veh_avail.index = newidx
 
@@ -135,13 +139,14 @@ grid_pop_gdf_latlon = grid_pop_gdf_crs.to_crs(4326)
 
 points = pd.DataFrame()
 for idx in grid_pop_gdf_latlon.index:
-    grid_pop_gdf_latlon.loc[idx,'id'] = idx
-    points.loc[idx,'id'] = idx
-    centroid = grid_pop_gdf_latlon.loc[idx,'geometry'].centroid
-    points.loc[idx,'lat'] = centroid.y
-    points.loc[idx,'lon'] = centroid.x
-    for col in ['POP10','pct_carfree','pct_onecar','pct_twopluscars','pop_dens']:
-        points.loc[idx, col] = grid_pop_gdf_latlon.loc[idx, col]
+    if not np.isnan(grid_pop_gdf_latlon.loc[idx,'POP10']):
+        grid_pop_gdf_latlon.loc[idx,'id'] = idx
+        points.loc[idx,'id'] = idx
+        centroid = grid_pop_gdf_latlon.loc[idx,'geometry'].centroid
+        points.loc[idx,'lat'] = centroid.y
+        points.loc[idx,'lon'] = centroid.x
+        for col in ['POP10','pct_carfree','pct_onecar','pct_twopluscars','pop_dens']:
+            points.loc[idx, col] = grid_pop_gdf_latlon.loc[idx, col]
 
 points.to_csv('pop_points.csv')
 grid_pop_gdf_latlon.to_file('grid_pop.geojson',driver='GeoJSON')
