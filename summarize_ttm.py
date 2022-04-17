@@ -94,7 +94,7 @@ def value_of_cxn(from_pop, to_pop, t_min):
     return baseval * 1.14 * np.e ** (-0.05 * t_min)
     #return (from_pop*to_pop)/((traveltime_min/30)**2)
 
-def sum_scenario_value(pop_points, scenario_ttms, ec_modes = [], ec_ttms = None):
+def sum_scenario_value(pop_points, scenario_ttms, cumulative_time = 30, ec_modes = [], ec_ttms = None):
     modes = scenario_ttms.keys()
     out_df = pop_points.copy()
     total_value = 0
@@ -102,6 +102,7 @@ def sum_scenario_value(pop_points, scenario_ttms, ec_modes = [], ec_ttms = None)
         from_pop = from_point[1]['POP10']
         for mode in modes:
             out_df.loc[from_point[0],f'val_from_{mode}'] = 0
+            out_df.loc[from_point[0], f'cumsum_{mode}_{cumulative_time}'] = 0
         if from_pop > 0:
             value_of_from = 0
             for to_point in pop_points.iterrows():
@@ -121,6 +122,10 @@ def sum_scenario_value(pop_points, scenario_ttms, ec_modes = [], ec_ttms = None)
                             mode_times[mode] += 1 #ASSUMPTION: +1 for waiting
                         if np.isnan(mode_times[mode]):
                             mode_times[mode] = 1000000000
+                            
+                    for mode in modes:
+                        if mode_times[mode] <= cumulative_time:
+                            out_df.loc[from_point[0], f'cumsum_{mode}_{cumulative_time}'] += to_pop
                         
                     mode_abilities = get_mode_abilities(from_point)
                     
