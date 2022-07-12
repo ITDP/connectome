@@ -1,26 +1,15 @@
 import pandas as pd
 import geopandas as gpd
+import osmnx as ox
 import numpy as np
 import shapely
 from shapely.geometry import Polygon
 import rasterstats
 #import utm
 
-
-city_crs = 32737 
-
-bounds_gdf_latlon = gpd.GeoDataFrame(geometry = [
-    shapely.geometry.box(36.648331,-1.342269,36.918526,-1.196050)],
-    crs = 4326)
-
-
-bounds_gdf_crs = bounds_gdf_latlon.to_crs(city_crs)
-
-low_resolution = 1250
-
 #eventually need to build _ghls and _usa together
-def build_grid(bounds_poly_crs, low_resolution, exception_gdf_crs=None, high_resolution=None):
-    xmin,ymin,xmax,ymax =  bounds_poly_crs.bounds
+def build_grid(city_crs, bounds_poly_utm, low_resolution, exception_gdf_utm=None, high_resolution=None):
+    xmin,ymin,xmax,ymax =  bounds_poly_utm.bounds
     # thank you Faraz (https://gis.stackexchange.com/questions/269243/creating-polygon-grid-using-geopandas)
     rows = int(np.ceil((ymax-ymin) /  low_resolution))
     cols = int(np.ceil((xmax-xmin) / low_resolution))
@@ -35,9 +24,9 @@ def build_grid(bounds_poly_crs, low_resolution, exception_gdf_crs=None, high_res
         Ybottom = YbottomOrigin
         for j in range(rows):
             cell = Polygon([(XleftOrigin, Ytop), (XrightOrigin, Ytop), (XrightOrigin, Ybottom), (XleftOrigin, Ybottom)])
-            cell = cell.intersection(bounds_poly_crs)
-            if exception_gdf_crs is not None:
-                if not cell.intersects(exception_gdf_crs.unary_union):
+            cell = cell.intersection(bounds_poly_utm)
+            if exception_gdf_utm is not None:
+                if not cell.intersects(exception_gdf_utm.unary_union):
                     lowres_cells.append(cell)
                 else:
                     exception_cells.append(cell)
@@ -48,37 +37,88 @@ def build_grid(bounds_poly_crs, low_resolution, exception_gdf_crs=None, high_res
         XleftOrigin = XleftOrigin + low_resolution
         XrightOrigin = XrightOrigin + low_resolution
     highres_cells = []
-    if exception_gdf_crs is not None:
+    if exception_gdf_utm is not None:
         for exception_cell in exception_cells:
             highres_cells += build_grid(exception_cell, high_resolution)
-    return lowres_cells + highres_cells
+    grid = gpd.GeoDataFrame(geometry=lowres_cells + highres_cells, crs=city_crs)
+    grid = grid[grid.area > 0]
+    grid.reset_index(inplace=True)
+    return grid
 
-grid_cells = build_grid(bounds_gdf_crs.unary_union, low_resolution)
-grid_gdf_crs = gpd.GeoDataFrame(geometry=grid_cells, crs=city_crs)
-grid_gdf_crs['area'] = grid_gdf_crs.geometry.area
-grid_gdf_latlon = grid_gdf_crs.to_crs(4326)
 
-pop_sums = rasterstats.zonal_stats(grid_gdf_latlon, 'prep_pop/clipped.tif', stats=['sum'])
-
-for idx in grid_gdf_latlon.index:
-    grid_gdf_latlon.loc[idx, 'POP10'] = pop_sums[idx]['sum']
-    if grid_gdf_latlon.loc[idx, 'POP10'] == None:
-        grid_gdf_latlon.loc[idx, 'POP10'] = 0
-
-grid_gdf_latlon['pop_dens'] = grid_gdf_latlon['POP10'] / grid_gdf_latlon.area
-points = pd.DataFrame()
-
-for idx in grid_gdf_latlon.index:
-    grid_gdf_latlon.loc[idx,'id'] = idx
-    points.loc[idx,'id'] = idx
-    points.loc[idx,'POP10'] = grid_gdf_latlon.loc[idx,'POP10']
-    centroid = grid_gdf_latlon.loc[idx,'geometry'].centroid
-    points.loc[idx,'lat'] = centroid.y
-    points.loc[idx,'lon'] = centroid.x
-    points.loc[idx,'pct_carfree'] = 0.8
-    points.loc[idx,'pct_onecar'] = 0.15
-    points.loc[idx,'pct_twopluscars'] = 0.05
+def populate_grid(grid, 
+                  ghsl_fileloc,
+                  save_loc = ('pop_points.csv','grid_pop.geojson'), #.csv, .geojson
+                  car_distribution = { #default values are estimates for Nairobi
+                      'pct_carfree' : 0.8,
+                      'pct_onecar': 0.15,
+                      'pct_twopluscars': 0.05,
+                      },
+                  ):
+    grid['area_m2'] = grid.geometry.area
+    grid_gdf_latlon = grid.to_crs(4326)
+    pop_densities = rasterstats.zonal_stats(grid_gdf_latlon, 
+                                            ghsl_fileloc, 
+                                            stats=['mean'])
+    for idx in grid_gdf_latlon.index:
+        if pop_densities[idx]['mean'] == None:
+            mean_dens = 0
+        else:
+            mean_dens = pop_densities[idx]['mean']
+        mean_dens_per_m2 = (mean_dens / 0.0625) / 1000000
+        grid_gdf_latlon.loc[idx,'pop_dens'] = mean_dens_per_m2
+        grid_gdf_latlon.loc[idx,'population'] = mean_dens_per_m2 * grid_gdf_latlon.loc[idx,'area_m2']
+    points = pd.DataFrame()
+    for idx in grid_gdf_latlon.index:
+        grid_gdf_latlon.loc[idx,'id'] = idx
+        points.loc[idx,'id'] = idx
+        points.loc[idx,'population'] = grid_gdf_latlon.loc[idx,'population']
+        centroid = grid_gdf_latlon.loc[idx,'geometry'].centroid
+        points.loc[idx,'lat'] = centroid.y
+        points.loc[idx,'lon'] = centroid.x
+        for var in car_distribution:
+            points.loc[idx, var] = car_distribution[var]
     
+    return points, grid_gdf_latlon
+
+
+#for some reason, the total pop of the grid may be different from the total pop of the area
+#I must have made some mistake above
+#but for now, this will even things out
+def adjust_population(dataframe, total_pop): 
+    df_sum = dataframe.population.sum()
+    ratio = total_pop / df_sum
+    print('ratio',ratio)
+    dataframe.population = dataframe.population * ratio
+    return dataframe    
     
-points.to_csv('prep_pop/pop_points.csv')
-grid_gdf_latlon.to_file('prep_pop/grid_pop.geojson',driver='GeoJSON')
+
+def setup_grid(city_crs, 
+               bounds_poly_utm, 
+               low_resolution, 
+               ghsl_fileloc,
+               total_pop = None, #None if you don't want to adjust the populations
+               save_loc = ('pop_points.csv','grid_pop.geojson'), #.csv, .geojson or None
+               car_distribution = { #default values are estimates for Nairobi
+                   'pct_carfree' : 0.8,
+                   'pct_onecar': 0.15,
+                   'pct_twopluscars': 0.05,
+                   },
+               ):
+    grid = build_grid(city_crs, bounds_poly_utm, low_resolution)
+    points, grid_gdf_latlon = populate_grid(grid, 'flz_pop_dens.tif')
+    if total_pop != None:
+        points = adjust_population(points, total_pop)
+        grid_gdf_latlon = adjust_population(grid_gdf_latlon, total_pop)
+    if save_loc is not None:
+        points.to_csv(save_loc[0])
+        grid_gdf_latlon.to_file(save_loc[1],driver='GeoJSON')
+
+
+if __name__ == '__main__':
+    flz_areas = gpd.read_file('flz_analysis_areas.gpkg')
+    flz_utm = ox.project_gdf(flz_areas)
+    setup_grid(flz_utm.crs, flz_utm.loc[0,'geometry'], 1000, 'flz_pop_dens.tif', 3204985.581)
+
+
+
