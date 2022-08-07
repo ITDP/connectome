@@ -41,34 +41,34 @@ class SimplestLTSAdder(osmium.SimpleHandler):
 					newtags['lts'] = '1'
 					self.writer.add_way(way.replace(tags=newtags))
 					self.n_modified_ways += 1
-				elif way.tags.get('cycleway') == 'lane' and way.tags.get('highway') in ['tertiary']:
-					newtags = dict(way.tags)
-					newtags['lts'] = '1'
-					self.writer.add_way(way.replace(tags=newtags))
-					self.n_modified_ways += 1
-				elif way.tags.get('cycleway:left') == 'lane' and way.tags.get('highway') in ['tertiary']:
-					newtags = dict(way.tags)
-					newtags['lts'] = '1'
-					self.writer.add_way(way.replace(tags=newtags))
-					self.n_modified_ways += 1
-				elif way.tags.get('cycleway:right') == 'lane' and way.tags.get('highway') in ['tertiary']:
-					newtags = dict(way.tags)
-					newtags['lts'] = '1'
-					self.writer.add_way(way.replace(tags=newtags))
-					self.n_modified_ways += 1
-				elif way.tags.get('cycleway') == 'lane' and way.tags.get('highway') in ['primary','secondary','residential']:
+				elif way.tags.get('cycleway') == 'lane' and way.tags.get('highway') in ['tertiary', 'residential']:
 					newtags = dict(way.tags)
 					newtags['lts'] = '2'
 					self.writer.add_way(way.replace(tags=newtags))
 					self.n_modified_ways += 1
-				elif way.tags.get('cycleway:left') == 'lane' and way.tags.get('highway') in ['primary','secondary','residential']:
+				elif way.tags.get('cycleway:left') == 'lane' and way.tags.get('highway') in ['tertiary', 'residential']:
 					newtags = dict(way.tags)
 					newtags['lts'] = '2'
 					self.writer.add_way(way.replace(tags=newtags))
 					self.n_modified_ways += 1
-				elif way.tags.get('cycleway:right') == 'lane' and way.tags.get('highway') in ['primary','secondary','residential']:
+				elif way.tags.get('cycleway:right') == 'lane' and way.tags.get('highway') in ['tertiary', 'residential']:
 					newtags = dict(way.tags)
 					newtags['lts'] = '2'
+					self.writer.add_way(way.replace(tags=newtags))
+					self.n_modified_ways += 1
+				elif way.tags.get('cycleway') == 'lane' and way.tags.get('highway') in ['primary','secondary']:
+					newtags = dict(way.tags)
+					newtags['lts'] = '3'
+					self.writer.add_way(way.replace(tags=newtags))
+					self.n_modified_ways += 1
+				elif way.tags.get('cycleway:left') == 'lane' and way.tags.get('highway') in ['primary','secondary']:
+					newtags = dict(way.tags)
+					newtags['lts'] = '3'
+					self.writer.add_way(way.replace(tags=newtags))
+					self.n_modified_ways += 1
+				elif way.tags.get('cycleway:right') == 'lane' and way.tags.get('highway') in ['primary','secondary']:
+					newtags = dict(way.tags)
+					newtags['lts'] = '3'
 					self.writer.add_way(way.replace(tags=newtags))
 					self.n_modified_ways += 1
 				else:
@@ -83,12 +83,13 @@ def add_lts_tags(osm_filename, out_filename, all_4=False):
 	ltsadder.apply_file(osm_filename)
 	print('added lts=1 or =2 to', ltsadder.n_modified_ways)
     
-for scenario in os.listdir('scenarios/'):
-    for filename in os.listdir(f'scenarios/{scenario}'):
-        if filename[-4:] == '.pbf':
-            full_filename = f'scenarios/{scenario}/{filename}'
-            temp_filename =  f'scenarios/{scenario}/OLD{filename}'
-            shutil.copy(full_filename, full_filename+'.backup')
-            os.rename(full_filename, temp_filename)
-            add_lts_tags(temp_filename,full_filename)
-            os.remove(temp_filename)
+if __name__ == '__main__':
+    for scenario in os.listdir('scenarios/'):
+        for filename in os.listdir(f'scenarios/{scenario}'):
+            if filename[-4:] == '.pbf':
+                full_filename = f'scenarios/{scenario}/{filename}'
+                temp_filename =  f'scenarios/{scenario}/OLD{filename}'
+                shutil.copy(full_filename, full_filename+'.backup')
+                os.rename(full_filename, temp_filename)
+                add_lts_tags(temp_filename,full_filename)
+                os.remove(temp_filename)

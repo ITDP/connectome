@@ -43,6 +43,7 @@ def build_grid(city_crs, bounds_poly_utm, low_resolution, exception_gdf_utm=None
     grid = gpd.GeoDataFrame(geometry=lowres_cells + highres_cells, crs=city_crs)
     grid = grid[grid.area > 0]
     grid.reset_index(inplace=True)
+    grid.drop('index', axis=1, inplace=True)
     return grid
 
 
@@ -71,13 +72,15 @@ def populate_grid(grid,
     points = pd.DataFrame()
     for idx in grid_gdf_latlon.index:
         grid_gdf_latlon.loc[idx,'id'] = idx
+        for var in car_distribution:
+            points.loc[idx, var] = car_distribution[var]
+            grid_gdf_latlon.loc[idx, var] = car_distribution[var]
+
         points.loc[idx,'id'] = idx
-        points.loc[idx,'population'] = grid_gdf_latlon.loc[idx,'population']
+        #points.loc[idx,'population'] = grid_gdf_latlon.loc[idx,'population']
         centroid = grid_gdf_latlon.loc[idx,'geometry'].centroid
         points.loc[idx,'lat'] = centroid.y
         points.loc[idx,'lon'] = centroid.x
-        for var in car_distribution:
-            points.loc[idx, var] = car_distribution[var]
     
     return points, grid_gdf_latlon
 
@@ -85,19 +88,22 @@ def populate_grid(grid,
 #for some reason, the total pop of the grid may be different from the total pop of the area
 #I must have made some mistake above
 #but for now, this will even things out
-def adjust_population(dataframe, total_pop): 
-    df_sum = dataframe.population.sum()
+def adjust_population(grid_gdf_latlon, ghsl_fileloc):
+    pop_sum = rasterstats.zonal_stats([grid_gdf_latlon.unary_union], 
+                                            ghsl_fileloc, 
+                                            stats='sum')
+    total_pop=pop_sum[0]['sum']
+    df_sum = grid_gdf_latlon.population.sum()
     ratio = total_pop / df_sum
-    print('ratio',ratio)
-    dataframe.population = dataframe.population * ratio
-    return dataframe    
+    grid_gdf_latlon.population = grid_gdf_latlon.population * ratio
+    return grid_gdf_latlon    
     
 
 def setup_grid(city_crs, 
                bounds_poly_utm, 
                low_resolution, 
                ghsl_fileloc,
-               total_pop = None, #None if you don't want to adjust the populations
+               adjust_pop = True, #False if you don't want to adjust the populations
                save_loc = ('pop_points.csv','grid_pop.geojson'), #.csv, .geojson or None
                car_distribution = { #default values are estimates for Nairobi
                    'pct_carfree' : 0.8,
@@ -106,10 +112,10 @@ def setup_grid(city_crs,
                    },
                ):
     grid = build_grid(city_crs, bounds_poly_utm, low_resolution)
-    points, grid_gdf_latlon = populate_grid(grid, 'flz_pop_dens.tif')
-    if total_pop != None:
-        points = adjust_population(points, total_pop)
-        grid_gdf_latlon = adjust_population(grid_gdf_latlon, total_pop)
+    points, grid_gdf_latlon = populate_grid(grid, ghsl_fileloc)
+    if adjust_pop:
+        #points = adjust_population(grid_gdf_latlon, total_pop)
+        grid_gdf_latlon = adjust_population(grid_gdf_latlon, ghsl_fileloc)
     if save_loc is not None:
         points.to_csv(save_loc[0])
         grid_gdf_latlon.to_file(save_loc[1],driver='GeoJSON')
