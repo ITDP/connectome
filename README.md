@@ -1,4 +1,4 @@
-# Two-Step Access
+# Connectome
 A set of scripts for a two-step procedure to measure the value of access to destinations across several modes of travel within a geographic area.
 
 Currently a minimally-functional prototype developed by D. Taylor Reich at the Institute for Transportation and Development Policy
