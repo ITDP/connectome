@@ -10,6 +10,11 @@ from tqdm import tqdm
 import maup
 import os
 
+
+#DEPRECATED -- NEEDS OVERHAUL
+#To call from API instead of requiring manual file download
+#and to include income as well as car ownership
+
 #INTRO - need to edit values here for new city deployment
 
 data_source = "census" #"census" or "ghsl"

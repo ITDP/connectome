@@ -26,37 +26,9 @@ assert sum([category[0] for category in cyclist_distribution]) == 1
 
 #END SETTINGS
 
-def clean_scenarios():
-    for scenario in os.listdir('scenarios/'):
-        sc_dir = 'scenarios/'+scenario+'/'
-        try:
-            os.remove(sc_dir+'network.dat')
-        except:
-            pass
-        
-        filelist = glob.glob(sc_dir+'*.mapdb')
-        for filepath in filelist:
-            try:
-                os.remove(filepath)
-            except:
-                pass
-        
-        filelist = glob.glob(sc_dir+'*.mapdb.p')
-        for filepath in filelist:
-            try:
-                os.remove(filepath)
-            except:
-                pass
-            
-        filelist = glob.glob(sc_dir+'travel_times/*')
-        for filepath in filelist:
-            try:
-                os.remove(filepath)
-            except:
-                pass
 
 def load_wide_ttm(file):
-    wide_ttm = pd.read_csv(file, index_col='from_id')
+    wide_ttm = pd.read_csv(file, index_col='fromId')
     del wide_ttm["Unnamed: 0"]
     wide_ttm.columns = pd.to_numeric(wide_ttm.columns)
     return wide_ttm
@@ -73,6 +45,8 @@ def get_mode_abilities(from_point):
     #for the same reasons
     #??how??
     #also, how to make into a dataframe?
+    #cars: assume that in a household with only 1 car, only 75% of trips can be made by car
+    # may be an overestimation?
     people_with_cars = (from_pop * from_point['pct_twopluscars']) + (0.75 * from_pop * from_point['pct_onecar'])
     people_without_cars = (from_pop * from_point['pct_carfree']) + (0.25 * from_pop * from_point['pct_onecar'])
     #TODO make thi reference the point, not an absolute variable
@@ -112,11 +86,12 @@ def evaluation(grid_pop, scenario_ttms, cumulative_time_lims = [], ec_modes = []
                 if to_pop > 0:
                     mode_times = {}
                     for mode in modes:
-                        if mode in ec_modes:
-                            try:
-                                mode_times[mode] = ec_ttms[mode].loc[from_id, to_id]
-                            except KeyError:
-                                mode_times[mode] = 1000000000
+                        if False: #mode in ec_modes: Removing this for now.
+                            pass
+                            # try:
+                            #     mode_times[mode] = ec_ttms[mode].loc[from_id, to_id]
+                            # except KeyError:
+                            #     mode_times[mode] = 1000000000
                         else:
                             try:
                                 mode_times[mode] = scenario_ttms[mode].loc[from_id, to_id]
@@ -163,6 +138,8 @@ def evaluation(grid_pop, scenario_ttms, cumulative_time_lims = [], ec_modes = []
                 modes = list(modes)
                 modes.append('allbike')
             for mode in list(modes):
+                out_df.loc[from_id,f'val_perperson_from_{mode}'] = out_df.loc[from_id,f'val_from_{mode}'] / from_pop
+            for mode in list(modes):
                 out_df.loc[from_id,f'prop_from_{mode}'] = out_df.loc[from_id,f'val_from_{mode}'] / value_of_from
             if np.isnan(value_of_from):
                 import pdb; pdb.set_trace()
@@ -206,75 +183,64 @@ def summarize_output(out_gdfs):
             summary.loc[scenario, 'perc_change_per_cap'] = perc_change_percap
             
     return summary
-    
-
-if __name__=='__main__':
-    grid_pop = gpd.read_file('grid_pop.geojson')
-    mode_ttms = {}
-    for mode in ['walk','car']:
-        mode_ttms[mode] = load_wide_ttm(f'scenarios/fortaleza/travel_times/{mode}_wide.csv')
-    total_val, out_gdf = evaluation(grid_pop, mode_ttms, cumulative_time_lims=[30,60])
-    print(total_val)
-    import pdb; pdb.set_trace()
-    out_gdf.to_file('out_gdf.gpkg', driver='GPKG')
 
 
 
-# if __name__ == "__main__":
-#     #load specific inputs for all scenarios
-#     scenario_ttms = {}
-#     out_gdfs = {}
-#     out = {}
+if __name__ == "__main__":
+    #load specific inputs for all scenarios
+    scenario_ttms = {}
+    out_gdfs = {}
+    out = {}
     
-#     #for the scenarios and modes in this dictionary, 
-#     #override the scenario-specific TTMs with the TTMs from the existing conditions scenario
-#     keep_ec_ttms = {
-#         'new_highways':'transit',
-#         'secondary_cycleways':'transit',}
+    #for the scenarios and modes in this dictionary, 
+    #override the scenario-specific TTMs with the TTMs from the existing conditions scenario
+    keep_ec_ttms = {
+         'new_highways':'transit',
+         'secondary_cycleways':'transit',}
 
     
     
-#     scenarios = os.listdir('scenarios/')
-#     if 'existing_conditions' in scenarios:
-#         scenarios.remove('existing_conditions')
-#         scenarios.insert(0, 'existing_conditions')
+    scenarios = os.listdir('scenarios/')
+    if 'existing_conditions' in scenarios:
+        scenarios.remove('existing_conditions')
+        scenarios.insert(0, 'existing_conditions')
     
-#     for scenario in scenarios:
-#         print(f'loading data for {scenario}')
-#         pop_points = pd.read_csv(f'scenarios/{scenario}/pop_points.csv')
-#         pop_points.index = pop_points.id.astype(int)
-#         pop_points.index.rename('id_number',inplace=True)
+    for scenario in scenarios:
+        print(f'loading data for {scenario}')
+        pop_points = pd.read_csv(f'scenarios/{scenario}/pop_points.csv')
+        pop_points.index = pop_points.id.astype(int)
+        pop_points.index.rename('id_number',inplace=True)
     
-#         grid_pop = gpd.read_file(f'scenarios/{scenario}/grid_pop.geojson')
-#         scenario_ttms[scenario] = {}
-#         for mode in ['car','walk','transit','bike_lts4','bike_lts2','bike_lts1']:
-#             mode_wide = load_wide_ttm(scenario, mode)
-#             scenario_ttms[scenario][mode] = mode_wide
-#         print(f'calculating value for for {scenario}')
-#         if scenario == scenarios[0]:
-#             #is existing conditions / BAU
-#             total_val, out_df = evaluation(pop_points, scenario_ttms[scenario])
-#         else: 
-#             if scenario in keep_ec_ttms.keys():
-#                 ec_ttms = keep_ec_ttms[scenario]
-#             else:
-#                 ec_ttms = []
-#             total_val, out_df = evaluation(pop_points, 
-#                                                    scenario_ttms[scenario],
-#                                                    ec_ttms,
-#                                                    scenario_ttms[scenarios[0]])
+        grid_pop = gpd.read_file(f'scenarios/{scenario}/grid_pop.geojson')
+        scenario_ttms[scenario] = {}
+        for mode in ['car','walk','transit','bike_lts4','bike_lts2','bike_lts1']:
+            mode_wide = load_wide_ttm(f'scenarios/{scenario}/travel_times/{mode}_wide.csv')
+            scenario_ttms[scenario][mode] = mode_wide
+        print(f'calculating value for for {scenario}')
+        if scenario == scenarios[0]:
+            #is existing conditions / BAU
+            total_val, out_df = evaluation(pop_points, scenario_ttms[scenario])
+        else: 
+            if scenario in keep_ec_ttms.keys():
+                ec_ttms = keep_ec_ttms[scenario]
+            else:
+                ec_ttms = []
+            total_val, out_df = evaluation(pop_points, 
+                                                    scenario_ttms[scenario],
+                                                    ec_ttms,
+                                                    scenario_ttms[scenarios[0]])
             
-#         out[scenario] = total_val
-#         scenario_gdf = grid_pop.merge(out_df, how='left', on='id')
-#         for col in scenario_gdf.columns:
-#             if col[-2:] == '_y':
-#                 scenario_gdf.drop(col, axis=1, inplace=True)
-#         if not scenario == scenarios[0]:
-#             for from_idx in scenario_gdf.index:
-#                 val_change = scenario_gdf.loc[from_idx, 'value_from_all'] - out_gdfs[scenarios[0]].loc[from_idx, 'value_from_all'] 
-#                 scenario_gdf.loc[from_idx, 'value_change'] = val_change
-#                 scenario_gdf.loc[from_idx, 'rel_value_change'] = val_change /  out_gdfs[scenarios[0]].loc[from_idx, 'value_from_all'] 
-#         scenario_gdf.to_file(f'results/{scenario}_grid.geojson', driver='GeoJSON')
-#         out_gdfs[scenario] = scenario_gdf
-#     summarize_output(out_gdfs).to_csv('results/summary.csv')
-#     print(out)
+        out[scenario] = total_val
+        scenario_gdf = grid_pop.merge(out_df, how='left', on='id')
+        for col in scenario_gdf.columns:
+            if col[-2:] == '_y':
+                scenario_gdf.drop(col, axis=1, inplace=True)
+        if not scenario == scenarios[0]:
+            for from_idx in scenario_gdf.index:
+                val_change = scenario_gdf.loc[from_idx, 'value_from_all'] - out_gdfs[scenarios[0]].loc[from_idx, 'value_from_all'] 
+                scenario_gdf.loc[from_idx, 'value_change'] = val_change
+                scenario_gdf.loc[from_idx, 'rel_value_change'] = val_change /  out_gdfs[scenarios[0]].loc[from_idx, 'value_from_all'] 
+        scenario_gdf.to_file(f'scenarios/{scenario}/results.geojson', driver='GeoJSON')
+        out_gdfs[scenario] = scenario_gdf
+    summarize_output(out_gdfs).to_csv('results_summary.csv')
+    print(out)
